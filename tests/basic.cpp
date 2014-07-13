@@ -12,8 +12,10 @@ TEST(InitTerminate, Basic, 0.0f,
      },
      // test
      {
-	 ASSERT(m_data.context = tmplInitContext());
+	 ASSERT(tmplInitContext(&m_data.context) == TMPL_SUCCESS);
+      ASSERT(m_data.context != 0);
 	 ASSERT(tmplTerminateContext(&m_data.context) == TMPL_SUCCESS);
+      ASSERT(m_data.context == 0)
      },
      // data
      {

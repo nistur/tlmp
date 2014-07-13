@@ -26,7 +26,7 @@ typedef struct _tmplContext tmplContext;
 #define TMPL_SUCCESS    0
 #define TMPL_NO_CONTEXT 1
 
-TMPL_EXPORT tmplContext* tmplInitContext     ();
+TMPL_EXPORT tmplReturn   tmplInitContext     (tmplContext** context);
 TMPL_EXPORT tmplReturn   tmplTerminateContext(tmplContext** context);
 TMPL_EXPORT const char*  tmplError();
 

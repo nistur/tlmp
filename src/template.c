@@ -1,22 +1,24 @@
-#include "tmpl_internal.h"
+#include "template_internal.h"
 
 tmplReturn tmplClearContext(tmplContext* context)
 {
     tmplReturn(SUCCESS);
 }
 
-tmplContext* tmplInitContext()
+tmplReturn tmplInitContext(tmplContext** context)
 {
-    tmplContext* context = tmplMalloc(tmplContext);
-    if(tmplClearContext(context) != TMPL_SUCCESS)
-	tmplTerminateContext(&context);
-    return context;
+    if(context == 0)
+        tmplReturn(NO_CONTEXT);
+    *context = tmplMalloc(tmplContext);
+    if(tmplClearContext(*context) != TMPL_SUCCESS)
+	   tmplTerminateContext(context);
+    tmplReturn(SUCCESS);
 }
 
 tmplReturn tmplTerminateContext(tmplContext** context)
 {
     if(*context == 0)
-	tmplReturn(NO_CONTEXT);
+	   tmplReturn(NO_CONTEXT);
 
     tmplFree(*context);
     *context = 0;
