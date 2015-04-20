@@ -1,10 +1,11 @@
-solution "template"
+solution "tlmp"
 language "C++"
 configurations { "Debug", "Release" }
 includedirs { "include", "src/include" }
 files { "include/**.h" }
 
-defines { "TMPL_BUILD" }
+defines { "TLMP_BUILD" }
+links { "usb" }
 
 configuration "Debug"
 defines { "DEBUG" }
@@ -19,19 +20,24 @@ flags { "OptimizeSpeed",
 	"NoFramePointer" }
 targetdir "build/release"
 
-project "template"
+project "tlmp"
 kind "StaticLib"
 files { "src/**.c", "src/**.cpp" }
 
-project "template-dynamic"
+project "tlmp-dynamic"
 kind "SharedLib"
 files { "src/**.c", "src/**.cpp" }
-targetname "template"
+targetname "tlmp"
+
+project "tlmp-log"
+kind "ConsoleApp"
+files { "tlmp-log/**.c" }
+links { "tlmp", "usb-1.0", "pthread" }
 
 project "tests"
 kind "ConsoleApp"
 files { "tests/**.cpp" }
-links { "template" }
+links { "tlmp", "usb-1.0" }
 configuration "Debug"
 postbuildcommands("build/debug/tests")
 configuration "Release"
