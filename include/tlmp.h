@@ -24,13 +24,21 @@ typedef int tlmpReturn;
 typedef struct _tlmpContext tlmpContext;
 typedef struct _tlmpDevice tlmpDevice;
 
+typedef void(*tlmpAuthCallback)(const char* login, const char* password);
+typedef void(*tlmpConnectCallback)(tlmpContext* context, tlmpDevice* device);
+    
 #define TLMP_SUCCESS    0
 #define TLMP_NO_CONTEXT 1
+#define TLMP_NO_DEVICE  2
+#define TLMP_BUSY       3
 
 TLMP_EXPORT tlmpReturn   tlmpInitContext     (tlmpContext** context);
 TLMP_EXPORT tlmpReturn   tlmpTerminateContext(tlmpContext** context);
-TLMP_EXPORT tlmpReturn   tlmpUpdateContext(tlmpContext* context);
 
+TLMP_EXPORT tlmpReturn   tlmpUpdateContext   (tlmpContext* context);
+TLMP_EXPORT tlmpReturn   tlmpSetConnectCallback(tlmpContext* context, tlmpConnectCallback callback);
+    
+TLMP_EXPORT tlmpReturn   tlmpRequestAuthentication(tlmpDevice* device, const char* domain, tlmpAuthCallback callback);
 
 TLMP_EXPORT const char*  tlmpError();
 
