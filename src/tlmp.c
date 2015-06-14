@@ -17,12 +17,32 @@ tlmpReturn tlmpClearContext(tlmpContext* context)
 
 int tlmpHotplugCallback(libusb_context* lib, libusb_device* dev, libusb_hotplug_event evt, void* context)
 {
-    tlmpDevice* device = tlmpMalloc(tlmpDevice);
-    device->dev = dev;
-    
-    tlmpAddDevice((tlmpContext*)context, device);
-    
-    printf("Ping\n");
+    tlmpContext* ctx = (tlmpContext*)context;
+    switch(evt)
+    {
+    case LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED:
+    {
+        tlmpDevice* device = tlmpMalloc(tlmpDevice);
+        device->dev = dev;
+        
+        tlmpAddDevice(ctx, device);
+        
+    }
+    break;
+    case LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT:
+    {
+        tlmpDevice* device = 0;
+        if(tlmpFindDevice(ctx, &device, dev) == TLMP_SUCCESS)
+            tlmpRemoveDevice(ctx, device);
+        tlmpFree(device);
+    }
+    break;
+    default:
+    {
+//        printf("Unhandled libusb callback 0x%X\n", evt);
+    }
+    }
+    return 0;
 }
 
 tlmpReturn tlmpInitContext(tlmpContext** context)
@@ -35,6 +55,8 @@ tlmpReturn tlmpInitContext(tlmpContext** context)
 
     libusb_init( &(*context)->lib );
     
+    libusb_device_handle* handle = 0;
+
     libusb_hotplug_register_callback((*context)->lib,
                                      LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED |
                                      LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
@@ -95,6 +117,46 @@ tlmpReturn tlmpAddDevice(tlmpContext* context, tlmpDevice* device)
     tlmpReturn(SUCCESS);
 }
 
+tlmpReturn tlmpRemoveDevice(tlmpContext* context, tlmpDevice* device)
+{
+    if(context == 0)
+        tlmpReturn(NO_CONTEXT);
+    if(device == 0 || context->devices == 0)
+        tlmpReturn(NO_DEVICE);
+
+    tlmpNode** node = &context->devices;
+    while(*node != &device->header)
+    {
+        if((*node)->next)
+            node = &(*node)->next;
+        else
+            tlmpReturn(NO_DEVICE);
+    }
+    
+    *node = device->header.next;
+
+    tlmpReturn(SUCCESS);
+}
+
+tlmpReturn tlmpFindDevice(tlmpContext* context, tlmpDevice** device, libusb_device* dev)
+{
+    if(context == 0)
+        tlmpReturn(NO_CONTEXT);
+    if(device == 0 || dev == 0 || context->devices == 0)
+        tlmpReturn(NO_DEVICE);
+
+    tlmpNode* node = context->devices;
+    while(((tlmpDevice*)node)->dev != dev)
+        if(node->next != 0)
+            node = node->next;
+        else
+            tlmpReturn(NO_DEVICE);
+
+    *device = (tlmpDevice*)node;
+
+    tlmpReturn(SUCCESS);
+}
+
 void tlmpPacketSent(struct libusb_transfer* transfer)
 {
 }
@@ -110,16 +172,25 @@ tlmpReturn tlmpSendPacket(tlmpDevice* device, unsigned char id, unsigned char* d
     buffer[1] = id;
     memcpy(&buffer[2],data,size);
     
-    
+    libusb_device_handle* handle = 0;
+
+    libusb_open(device->dev, &handle); 
+
     struct libusb_transfer* transfer = libusb_alloc_transfer(1);
     libusb_fill_control_transfer(transfer,
-                                 device->dev,
+                                 handle,
                                  data,
                                  tlmpPacketSent,
                                  device,
                                  1000);
                                  
-    
+
+    libusb_submit_transfer(transfer);
+
+    libusb_free_transfer(transfer);
+
+    libusb_close(handle);
+
     tlmpReturn(SUCCESS);
 }
 
@@ -138,13 +209,45 @@ tlmpReturn tlmpRequestAuthentication(tlmpDevice* device, const char* domain, tlm
     if(device == 0)
         tlmpReturn(NO_DEVICE);
     
-    if(device->callback)
+    if(device->state != TLMP_STATE_IDLE)
         tlmpReturn(BUSY);
     
-    device->callback = callback;
+    device->callback = (void*)callback;
     device->state = TLMP_STATE_WAITFORLOGIN;
     
     tlmpReturn(SUCCESS);
+}
+
+tlmpReturn tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback)
+{
+    if(device == 0)
+        tlmpReturn(NO_DEVICE);
+
+    if(device->state != TLMP_STATE_IDLE)
+        tlmpReturn(BUSY);
+
+    device->state = TLMP_STATE_WAITFORSTATUS;
+    device->callback = (void*)callback;
+
+    return tlmpSendPacket(device,
+                          TLMP_MESSAGE_STATUS,
+                          0, 0);
+}
+
+void* tlmpMallocInternal(int n)
+{
+    void* p = malloc(n);
+    memset(p,0,n);
+    return p;
+}
+
+void tlmpFreeInternal(void** p)
+{
+    if(p && *p)
+    {
+        free(*p);
+        *p = 0;
+    }      
 }
 
 const char* tlmpError()

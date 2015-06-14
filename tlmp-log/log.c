@@ -1,6 +1,6 @@
 #include "stdio.h"
 #include "tlmp_internal.h"
-#include "libusb-1.0/libusb.h"
+#include "libusb.h"
 #include "pthread.h"
 #include "unistd.h"
 
@@ -19,12 +19,24 @@ void* update(void* user)
     return 0;
 }
 
+void deviceStatus(tlmpContext* context, tlmpStatus status)
+{
+    printf("Got status 0x%X for device 0x%X\n", status, context);
+}
+
+void deviceConnected(tlmpContext*context, tlmpDevice* device)
+{
+    tlmpRequestStatus(device, deviceStatus);
+}
+
 int main(int argc, char** argv)
 {
     printf("Start\n");
     int c;
     pthread_t threadID;
     tlmpInitContext(&ctx);
+
+    tlmpSetConnectCallback(ctx, deviceConnected);
 
     running = 1;
     
