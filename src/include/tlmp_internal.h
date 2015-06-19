@@ -39,6 +39,7 @@ struct _tlmpDevice
 {
     tlmpNode header;
     libusb_device*  dev;
+    libusb_device_handle* handle;
     void* callback;
 
     int state;

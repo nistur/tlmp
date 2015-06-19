@@ -55,8 +55,6 @@ tlmpReturn tlmpInitContext(tlmpContext** context)
 
     libusb_init( &(*context)->lib );
     
-    libusb_device_handle* handle = 0;
-
     libusb_hotplug_register_callback((*context)->lib,
                                      LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED |
                                      LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
@@ -110,6 +108,12 @@ tlmpReturn tlmpAddDevice(tlmpContext* context, tlmpDevice* device)
         tail = &(*tail)->next;
     *tail = &device->header;
 
+    int error = libusb_open(device->dev, &device->handle); 
+    if( error )
+        printf( "open failed with error %d\n", error );
+    
+    printf( "handle: 0x%X\n", device->handle );
+
 
     if(context->connect != 0)
         context->connect(context, device);
@@ -124,6 +128,8 @@ tlmpReturn tlmpRemoveDevice(tlmpContext* context, tlmpDevice* device)
     if(device == 0 || context->devices == 0)
         tlmpReturn(NO_DEVICE);
 
+    libusb_close(device->handle);
+    
     tlmpNode** node = &context->devices;
     while(*node != &device->header)
     {
@@ -172,24 +178,13 @@ tlmpReturn tlmpSendPacket(tlmpDevice* device, unsigned char id, unsigned char* d
     buffer[1] = id;
     memcpy(&buffer[2],data,size);
     
-    libusb_device_handle* handle = 0;
+    int actual_size = 0;
+    int error = libusb_interrupt_transfer( device->handle, 1, buffer, 64, &actual_size, 0 );
 
-    libusb_open(device->dev, &handle); 
-
-    struct libusb_transfer* transfer = libusb_alloc_transfer(1);
-    libusb_fill_control_transfer(transfer,
-                                 handle,
-                                 data,
-                                 tlmpPacketSent,
-                                 device,
-                                 1000);
-                                 
-
-    libusb_submit_transfer(transfer);
-
-    libusb_free_transfer(transfer);
-
-    libusb_close(handle);
+    if( error )
+        printf( "transfer failed with error %d\n", error );
+    if(size != actual_size)
+        printf("didn't send enough data %d\n", actual_size );
 
     tlmpReturn(SUCCESS);
 }
@@ -229,9 +224,10 @@ tlmpReturn tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback)
     device->state = TLMP_STATE_WAITFORSTATUS;
     device->callback = (void*)callback;
 
+    static unsigned char empty[62];
     return tlmpSendPacket(device,
                           TLMP_MESSAGE_STATUS,
-                          0, 0);
+                          empty, 62);
 }
 
 void* tlmpMallocInternal(int n)

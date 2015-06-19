@@ -6,6 +6,8 @@
 
 int running = 0;
 tlmpContext* ctx;
+tlmpDevice* dev;
+
 
 #define REFRESH (1000000 / 60)
 
@@ -26,7 +28,8 @@ void deviceStatus(tlmpContext* context, tlmpStatus status)
 
 void deviceConnected(tlmpContext*context, tlmpDevice* device)
 {
-    tlmpRequestStatus(device, deviceStatus);
+    dev = device;
+//    tlmpRequestStatus(device, deviceStatus);
 }
 
 int main(int argc, char** argv)
@@ -46,6 +49,8 @@ int main(int argc, char** argv)
 	scanf("%d", &c);
 	if(c==0)
 	    break;
+        else if(dev)
+            tlmpRequestStatus(dev, deviceStatus);
     }
     running = 0;
     tlmpTerminateContext(&ctx);
