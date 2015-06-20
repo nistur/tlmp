@@ -50,7 +50,18 @@ int main(int argc, char** argv)
 	if(c==0)
 	    break;
         else if(dev)
-            tlmpRequestStatus(dev, deviceStatus);
+	{
+	    tlmpStatus stat = 0;
+	    tlmpGetStatus(dev, &stat);
+	    if(stat & TLMP_STATUS_SMARTCARD)
+		printf("Smartcard inserted\n");
+	    if(stat & TLMP_STATUS_PINSCREEN)
+		printf("On unlock screen\n");
+	    if(stat & TLMP_STATUS_UNLOCKED)
+		printf("Device unlocked\n");
+	    if(stat & TLMP_STATUS_UNKNOWNCARD)
+		printf("Unknown card inserted\n");
+	}
     }
     running = 0;
     tlmpTerminateContext(&ctx);

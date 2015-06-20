@@ -163,10 +163,6 @@ tlmpReturn tlmpFindDevice(tlmpContext* context, tlmpDevice** device, libusb_devi
     tlmpReturn(SUCCESS);
 }
 
-void tlmpPacketSent(struct libusb_transfer* transfer)
-{
-}
-
 tlmpReturn tlmpSendPacket(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size)
 {
     if(device == 0)
@@ -177,15 +173,79 @@ tlmpReturn tlmpSendPacket(tlmpDevice* device, unsigned char id, unsigned char* d
     buffer[0] = size;
     buffer[1] = id;
     memcpy(&buffer[2],data,size);
+    size += 2;
+
+    unsigned char hasKernel = 0;
+    if(libusb_kernel_driver_active(device->handle, 0))
+    {
+	hasKernel = 1;
+	libusb_detach_kernel_driver(device->handle, 0);
+    }
+    
+    int error = libusb_claim_interface(device->handle, 0);
+    if(error)
+	printf("couldn't claim interface (%d) %s\n", error, libusb_strerror(error));
+    
     
     int actual_size = 0;
-    int error = libusb_interrupt_transfer( device->handle, 1, buffer, 64, &actual_size, 0 );
+    error = libusb_interrupt_transfer(device->handle,
+				      LIBUSB_ENDPOINT_OUT | 2,
+				      buffer, size, &actual_size, 0 );
 
     if( error )
         printf( "transfer failed with error %d\n", error );
     if(size != actual_size)
-        printf("didn't send enough data %d\n", actual_size );
+        printf("didn't send enough data %d/%d\n", actual_size, size );
 
+    libusb_release_interface(device->handle, 0);
+
+
+    if(hasKernel)
+	libusb_attach_kernel_driver(device->handle, 0);
+    
+    tlmpReturn(SUCCESS);
+}
+
+tlmpReturn tlmpReceivePacket(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size)
+{
+    if(device == 0)
+        tlmpReturn(NO_DEVICE);
+
+    unsigned char buffer[64];
+    unsigned char hasKernel = 0;
+    if(libusb_kernel_driver_active(device->handle, 0))
+    {
+	hasKernel = 1;
+	libusb_detach_kernel_driver(device->handle, 0);
+    }
+    
+    int error = libusb_claim_interface(device->handle, 0);
+    if(error)
+	printf("couldn't claim interface (%d) %s\n", error, libusb_strerror(error));
+    
+    
+    int actual_size = 0;
+    error = libusb_interrupt_transfer(device->handle,
+				      LIBUSB_ENDPOINT_IN | 1,
+				      buffer, 64, &actual_size, 0 );
+
+    if( error )
+        printf( "transfer failed with error %d\n", error );
+    if(64 != actual_size)
+        printf("didn't receive enough data %d/%d\n", actual_size, size );
+
+    libusb_release_interface(device->handle, 0);
+
+
+    if(hasKernel)
+	libusb_attach_kernel_driver(device->handle, 0);
+
+    if(buffer[1] != id)
+	printf("Received invalid message\n");
+    if(size<buffer[0])
+	printf("Received more data than anticipated %d/%d\n", size, buffer[0]);
+    memcpy(data, &buffer[2], size);
+    
     tlmpReturn(SUCCESS);
 }
 
@@ -224,10 +284,37 @@ tlmpReturn tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback)
     device->state = TLMP_STATE_WAITFORSTATUS;
     device->callback = (void*)callback;
 
-    static unsigned char empty[62];
-    return tlmpSendPacket(device,
-                          TLMP_MESSAGE_STATUS,
-                          empty, 62);
+    tlmpStatus stat = 0;
+    tlmpReturn err =  tlmpSendPacket(device,
+				     TLMP_MESSAGE_STATUS,
+				     &stat, 1);
+    err = tlmpReceivePacket(device,
+			    TLMP_MESSAGE_STATUS,
+			    &stat, 1);
+    return err;
+    
+}
+
+tlmpReturn tlmpGetStatus(tlmpDevice* device, tlmpStatus* status)
+{
+    if(device == 0)
+        tlmpReturn(NO_DEVICE);
+
+    if(device->state != TLMP_STATE_IDLE)
+        tlmpReturn(BUSY);
+
+    device->state = TLMP_STATE_WAITFORSTATUS;
+
+    tlmpStatus stat = 0;
+    tlmpReturn err =  tlmpSendPacket(device,
+				     TLMP_MESSAGE_STATUS,
+				     &stat, sizeof(stat));
+    err = tlmpReceivePacket(device,
+			    TLMP_MESSAGE_STATUS,
+			    status, sizeof(tlmpStatus));
+    device->state = TLMP_STATE_IDLE;
+    return err;
+    
 }
 
 void* tlmpMallocInternal(int n)

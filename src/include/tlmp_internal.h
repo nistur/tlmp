@@ -71,7 +71,9 @@ tlmpReturn tlmpAddDevice(tlmpContext* context, tlmpDevice* device);
 tlmpReturn tlmpRemoveDevice(tlmpContext* context, tlmpDevice* device);
 tlmpReturn tlmpFindDevice(tlmpContext* context, tlmpDevice** device, libusb_device* dev);
 tlmpReturn tlmpSendPacket(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size);
+tlmpReturn tlmpReceivePacket(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size);
 
 #include <string.h>
+#include <stdio.h>
 
 #endif/*__TLMP_INTERNAL_H__*/

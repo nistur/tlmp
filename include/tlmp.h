@@ -20,8 +20,8 @@ extern "C" {
 #endif
 
 typedef int tlmpReturn;
-typedef int tlmpStatus;
-
+typedef unsigned char tlmpStatus;
+    
 typedef struct _tlmpContext tlmpContext;
 typedef struct _tlmpDevice tlmpDevice;
 
@@ -35,20 +35,26 @@ typedef void(*tlmpStatusCallback)(tlmpContext* context, tlmpStatus status);
 #define TLMP_NO_DEVICE  2
 #define TLMP_BUSY       3
 
-// tlmpStatus types
-#define TLMP_ERROR    -1
-#define TLMP_CONNECTED 0
-#define TLMP_UNLOCKED  1
+// tlmpStatus bitmasks
+#define TLMP_STATUS_SMARTCARD   (1<<0)
+#define TLMP_STATUS_PINSCREEN   (1<<1)
+#define TLMP_STATUS_UNLOCKED    (1<<2)
+#define TLMP_STATUS_UNKNOWNCARD (1<<3)
+        
 
 TLMP_EXPORT tlmpReturn   tlmpInitContext     (tlmpContext** context);
 TLMP_EXPORT tlmpReturn   tlmpTerminateContext(tlmpContext** context);
 
 TLMP_EXPORT tlmpReturn   tlmpUpdateContext   (tlmpContext* context);
 TLMP_EXPORT tlmpReturn   tlmpSetConnectCallback(tlmpContext* context, tlmpConnectCallback callback);
-    
+
+// TODO: support async requests
+    /*
 TLMP_EXPORT tlmpReturn   tlmpRequestAuthentication(tlmpDevice* device, const char* domain, tlmpAuthCallback callback);
 
 TLMP_EXPORT tlmpReturn   tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback);
+    */
+TLMP_EXPORT tlmpReturn tlmpGetStatus(tlmpDevice* device, tlmpStatus* status);
 
 TLMP_EXPORT const char*  tlmpError();
 
