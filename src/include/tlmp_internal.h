@@ -66,6 +66,8 @@ extern const char* g_tlmpErrors[];
 	return TLMP_##x;			\
     }
 
+void tlmpUnusedInternal(void* x);
+#define tlmpUnused(x) tlmpUnusedInternal((void*)&x)
 
 tlmpReturn tlmpAddDevice(tlmpContext* context, tlmpDevice* device);
 tlmpReturn tlmpRemoveDevice(tlmpContext* context, tlmpDevice* device);
@@ -74,6 +76,5 @@ tlmpReturn tlmpSendPacket(tlmpDevice* device, unsigned char id, unsigned char* d
 tlmpReturn tlmpReceivePacket(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size);
 
 #include <string.h>
-#include <stdio.h>
 
 #endif/*__TLMP_INTERNAL_H__*/

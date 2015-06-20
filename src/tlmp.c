@@ -1,12 +1,15 @@
 #include "tlmp_internal.h"
 #include "sys/time.h"
 
+// Clean up the context. Just set everything to 0.
+// If any devices are connected, delete them
 tlmpReturn tlmpClearContext(tlmpContext* context)
 {
     tlmpNode* dev = context->devices;
     while(dev)
     {
         tlmpNode* next = dev->next;
+        libusb_close(((tlmpDevice*)dev)->handle);
         tlmpFree(dev);
         dev = next;
     }
@@ -15,8 +18,10 @@ tlmpReturn tlmpClearContext(tlmpContext* context)
     tlmpReturn(SUCCESS);
 }
 
+// libusb callback when a mooltipass is connected or disconnected.
 int tlmpHotplugCallback(libusb_context* lib, libusb_device* dev, libusb_hotplug_event evt, void* context)
 {
+    tlmpUnused(lib);
     tlmpContext* ctx = (tlmpContext*)context;
     switch(evt)
     {
@@ -45,13 +50,20 @@ int tlmpHotplugCallback(libusb_context* lib, libusb_device* dev, libusb_hotplug_
     return 0;
 }
 
+// create a context and link up libusb to it
 tlmpReturn tlmpInitContext(tlmpContext** context)
 {
     if(context == 0)
         tlmpReturn(NO_CONTEXT);
     *context = tlmpMalloc(tlmpContext);
-    if(tlmpClearContext(*context) != TLMP_SUCCESS)
+    if(*context == 0)
+        tlmpReturn(STORAGE);
+    tlmpReturn clearError = tlmpClearContext(*context);
+    if(clearError != TLMP_SUCCESS)
+    {
         tlmpTerminateContext(context);
+        return clearError;
+    }
 
     libusb_init( &(*context)->lib );
     
@@ -68,6 +80,7 @@ tlmpReturn tlmpInitContext(tlmpContext** context)
     tlmpReturn(SUCCESS);
 }
 
+// Clean up the context and disconnect libusb
 tlmpReturn tlmpTerminateContext(tlmpContext** context)
 {
     if(*context == 0)
@@ -85,6 +98,7 @@ tlmpReturn tlmpTerminateContext(tlmpContext** context)
     tlmpReturn(SUCCESS);
 }
 
+// pump libusb events
 tlmpReturn tlmpUpdateContext(tlmpContext* context)
 {
     if(context == 0)
@@ -98,6 +112,7 @@ tlmpReturn tlmpUpdateContext(tlmpContext* context)
     tlmpReturn(SUCCESS);
 }
 
+// add device to the linked list
 tlmpReturn tlmpAddDevice(tlmpContext* context, tlmpDevice* device)
 {
     if(context == 0)
@@ -110,17 +125,15 @@ tlmpReturn tlmpAddDevice(tlmpContext* context, tlmpDevice* device)
 
     int error = libusb_open(device->dev, &device->handle); 
     if( error )
-        printf( "open failed with error %d\n", error );
-    
-    printf( "handle: 0x%X\n", device->handle );
-
+        tlmpReturn(PERMISSION);
 
     if(context->connect != 0)
-        context->connect(context, device);
+        context->connect(context, device, 1);
     
     tlmpReturn(SUCCESS);
 }
 
+// find and remove a device if it's been disconnected
 tlmpReturn tlmpRemoveDevice(tlmpContext* context, tlmpDevice* device)
 {
     if(context == 0)
@@ -140,6 +153,10 @@ tlmpReturn tlmpRemoveDevice(tlmpContext* context, tlmpDevice* device)
     }
     
     *node = device->header.next;
+
+    if(context->connect != 0)
+        context->connect(context, device, 0);
+    tlmpFree(device);
 
     tlmpReturn(SUCCESS);
 }
@@ -163,6 +180,7 @@ tlmpReturn tlmpFindDevice(tlmpContext* context, tlmpDevice** device, libusb_devi
     tlmpReturn(SUCCESS);
 }
 
+// Send some data to the mooltipass
 tlmpReturn tlmpSendPacket(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size)
 {
     if(device == 0)
@@ -172,40 +190,45 @@ tlmpReturn tlmpSendPacket(tlmpDevice* device, unsigned char id, unsigned char* d
     size = size>62?62:size;
     buffer[0] = size;
     buffer[1] = id;
-    memcpy(&buffer[2],data,size);
+    if(size && data)
+        memcpy(&buffer[2],data,size);
     size += 2;
 
     unsigned char hasKernel = 0;
+    // This appears to be necessary in Linux to get the OS 
+    // to release the standard HID driver so we can communicate
+    // with the device
     if(libusb_kernel_driver_active(device->handle, 0))
     {
-	hasKernel = 1;
-	libusb_detach_kernel_driver(device->handle, 0);
+    	hasKernel = 1;
+    	libusb_detach_kernel_driver(device->handle, 0);
     }
     
-    int error = libusb_claim_interface(device->handle, 0);
-    if(error)
-	printf("couldn't claim interface (%d) %s\n", error, libusb_strerror(error));
+    // Let the OS know that we want to communicate with the device
+    if(libusb_claim_interface(device->handle, 0))
+        tlmpReturn(PERMISSION);
     
     
     int actual_size = 0;
-    error = libusb_interrupt_transfer(device->handle,
+    int error = libusb_interrupt_transfer(device->handle,
 				      LIBUSB_ENDPOINT_OUT | 2,
-				      buffer, size, &actual_size, 0 );
+				      buffer, size, &actual_size, 0);
 
-    if( error )
-        printf( "transfer failed with error %d\n", error );
-    if(size != actual_size)
-        printf("didn't send enough data %d/%d\n", actual_size, size );
+    // Check that we've sent the correct data
+    if(error || size != actual_size)
+        tlmpReturn(IO);
 
     libusb_release_interface(device->handle, 0);
 
-
+    // if we've disconnected a kernel driver, then let the OS
+    // reattach it
     if(hasKernel)
-	libusb_attach_kernel_driver(device->handle, 0);
+	   libusb_attach_kernel_driver(device->handle, 0);
     
     tlmpReturn(SUCCESS);
 }
 
+// receive some data from the mooltipass
 tlmpReturn tlmpReceivePacket(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size)
 {
     if(device == 0)
@@ -213,42 +236,47 @@ tlmpReturn tlmpReceivePacket(tlmpDevice* device, unsigned char id, unsigned char
 
     unsigned char buffer[64];
     unsigned char hasKernel = 0;
+    // This appears to be necessary in Linux to get the OS 
+    // to release the standard HID driver so we can communicate
+    // with the device
     if(libusb_kernel_driver_active(device->handle, 0))
     {
-	hasKernel = 1;
-	libusb_detach_kernel_driver(device->handle, 0);
+    	hasKernel = 1;
+    	libusb_detach_kernel_driver(device->handle, 0);
     }
     
-    int error = libusb_claim_interface(device->handle, 0);
-    if(error)
-	printf("couldn't claim interface (%d) %s\n", error, libusb_strerror(error));
+    // Let the OS know that we want to communicate with the device
+    if(libusb_claim_interface(device->handle, 0))
+        tlmpReturn(PERMISSION);
     
     
     int actual_size = 0;
-    error = libusb_interrupt_transfer(device->handle,
-				      LIBUSB_ENDPOINT_IN | 1,
+    int error = libusb_interrupt_transfer(device->handle,
+		  		      LIBUSB_ENDPOINT_IN | 1,
 				      buffer, 64, &actual_size, 0 );
-
-    if( error )
-        printf( "transfer failed with error %d\n", error );
-    if(64 != actual_size)
-        printf("didn't receive enough data %d/%d\n", actual_size, size );
 
     libusb_release_interface(device->handle, 0);
 
-
+    // if we've disconnected a kernel driver, then let the OS
+    // reattach it
     if(hasKernel)
-	libusb_attach_kernel_driver(device->handle, 0);
+        libusb_attach_kernel_driver(device->handle, 0);
 
-    if(buffer[1] != id)
-	printf("Received invalid message\n");
+    // Check that we've actually received what we expected to
+    if(error || 
+        64 != actual_size ||
+        buffer[1] != id)
+        tlmpReturn(IO);
+
+    // Check that we've been given enough space to store the data
     if(size<buffer[0])
-	printf("Received more data than anticipated %d/%d\n", size, buffer[0]);
+        tlmpReturn(STORAGE);
     memcpy(data, &buffer[2], size);
     
     tlmpReturn(SUCCESS);
 }
 
+// hook up an external callback for when a mooltipass has been connected or disconnected
 tlmpReturn tlmpSetConnectCallback(tlmpContext* context, tlmpConnectCallback callback)
 {
     if(context == 0)
@@ -259,42 +287,39 @@ tlmpReturn tlmpSetConnectCallback(tlmpContext* context, tlmpConnectCallback call
     tlmpReturn(SUCCESS);
 }
 
+// TODO: Async credential request
 tlmpReturn tlmpRequestAuthentication(tlmpDevice* device, const char* domain, tlmpAuthCallback callback)
 {
+    tlmpUnused(domain);
+    tlmpUnused(callback);
     if(device == 0)
         tlmpReturn(NO_DEVICE);
     
     if(device->state != TLMP_STATE_IDLE)
         tlmpReturn(BUSY);
-    
-    device->callback = (void*)callback;
-    device->state = TLMP_STATE_WAITFORLOGIN;
+
+    //device->state = TLMP_STATE_WAITFORLOGIN;
     
     tlmpReturn(SUCCESS);
 }
 
+// TODO: Async status request
 tlmpReturn tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback)
 {
+    tlmpUnused(callback);
     if(device == 0)
         tlmpReturn(NO_DEVICE);
 
     if(device->state != TLMP_STATE_IDLE)
         tlmpReturn(BUSY);
 
-    device->state = TLMP_STATE_WAITFORSTATUS;
-    device->callback = (void*)callback;
+//    device->state = TLMP_STATE_WAITFORSTATUS;
 
-    tlmpStatus stat = 0;
-    tlmpReturn err =  tlmpSendPacket(device,
-				     TLMP_MESSAGE_STATUS,
-				     &stat, 1);
-    err = tlmpReceivePacket(device,
-			    TLMP_MESSAGE_STATUS,
-			    &stat, 1);
-    return err;
+    tlmpReturn(SUCCESS);
     
 }
 
+// Find what status the mooltipass is in
 tlmpReturn tlmpGetStatus(tlmpDevice* device, tlmpStatus* status)
 {
     if(device == 0)
@@ -305,18 +330,23 @@ tlmpReturn tlmpGetStatus(tlmpDevice* device, tlmpStatus* status)
 
     device->state = TLMP_STATE_WAITFORSTATUS;
 
-    tlmpStatus stat = 0;
     tlmpReturn err =  tlmpSendPacket(device,
 				     TLMP_MESSAGE_STATUS,
-				     &stat, sizeof(stat));
-    err = tlmpReceivePacket(device,
-			    TLMP_MESSAGE_STATUS,
-			    status, sizeof(tlmpStatus));
+				     0, 0);
+
+    // if we've went the packet, then listen for the response
+    if(err == TLMP_SUCCESS)
+    {
+        err = tlmpReceivePacket(device,
+                    TLMP_MESSAGE_STATUS,
+                    status, sizeof(tlmpStatus));
+    }
     device->state = TLMP_STATE_IDLE;
     return err;
     
 }
 
+// Malloc wrapper that auto-nulls
 void* tlmpMallocInternal(int n)
 {
     void* p = malloc(n);
@@ -324,6 +354,7 @@ void* tlmpMallocInternal(int n)
     return p;
 }
 
+// Safe free, checks and sets 0
 void tlmpFreeInternal(void** p)
 {
     if(p && *p)
@@ -333,7 +364,14 @@ void tlmpFreeInternal(void** p)
     }      
 }
 
+// return a user-friendly error message
 const char* tlmpError()
 {
     return g_tlmpErrors[g_tlmpError];
+}
+
+// ignore
+void tlmpUnusedInternal(void* x)
+{
+    x += 0;
 }

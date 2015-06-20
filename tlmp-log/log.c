@@ -8,32 +8,35 @@ int running = 0;
 tlmpContext* ctx;
 tlmpDevice* dev;
 
+void _unused(void* x){ x += 0; }
+#define UNUSED(x) _unused((void*)&x)
 
 #define REFRESH (1000000 / 60)
 
 void* update(void* user)
 {
+    UNUSED(user);
     while( running )
     {
-	tlmpUpdateContext(ctx);
-	usleep(REFRESH);
+    	tlmpUpdateContext(ctx);
+    	usleep(REFRESH);
     }
     return 0;
 }
 
-void deviceStatus(tlmpContext* context, tlmpStatus status)
+void deviceConnected(tlmpContext* context, tlmpDevice* device, int connected)
 {
-    printf("Got status 0x%X for device 0x%X\n", status, context);
-}
-
-void deviceConnected(tlmpContext*context, tlmpDevice* device)
-{
-    dev = device;
-//    tlmpRequestStatus(device, deviceStatus);
+    UNUSED(context);
+    if(connected)
+        dev = device;
+    else if(dev == device)
+        dev = NULL;
 }
 
 int main(int argc, char** argv)
 {
+    UNUSED(argc);
+    UNUSED(argv);
     printf("Start\n");
     int c;
     pthread_t threadID;
