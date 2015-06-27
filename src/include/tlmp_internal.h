@@ -63,6 +63,8 @@ struct _tlmpDevice
     void* callback;
 
     int state;
+
+    unsigned char kernel;
 };
 
 /***************************************
@@ -95,6 +97,10 @@ tlmpReturn tlmpFindDevice(tlmpContext* context, tlmpDevice** device, libusb_devi
 tlmpReturn tlmpSendPacket(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size);
 tlmpReturn tlmpReceivePacket(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size);
 
+tlmpReturn tlmpSendPacketAsync(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size);
+tlmpReturn tlmpReceivePacketAsync(tlmpDevice* device);
+
 #include <string.h>
+#include <stdio.h>
 
 #endif/*__TLMP_INTERNAL_H__*/

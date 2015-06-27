@@ -47,7 +47,7 @@ typedef struct _tlmpDevice tlmpDevice;
 
 typedef void(*tlmpAuthCallback)(const char* login, const char* password);
 typedef void(*tlmpConnectCallback)(tlmpContext* context, tlmpDevice* device, int connected);
-typedef void(*tlmpStatusCallback)(tlmpContext* context, tlmpStatus status);
+typedef void(*tlmpStatusCallback)(tlmpDevice* context, tlmpStatus status);
 
 // tlmpReturn types    
 #define TLMP_SUCCESS    0
@@ -108,9 +108,9 @@ TLMP_EXPORT tlmpReturn   tlmpSetConnectCallback (tlmpContext* context, tlmpConne
 // TODO: support async requests
 /*
 TLMP_EXPORT tlmpReturn   tlmpRequestAuthentication(tlmpDevice* device, const char* domain, tlmpAuthCallback callback);
-
-TLMP_EXPORT tlmpReturn   tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback);
 */
+TLMP_EXPORT tlmpReturn   tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback);
+
 
 // tlmpGetStatus
 //  Gets the current status of a specific mooltipass

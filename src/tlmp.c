@@ -59,7 +59,6 @@ int tlmpHotplugCallback(libusb_context* lib, libusb_device* dev, libusb_hotplug_
         tlmpDevice* device = 0;
         if(tlmpFindDevice(ctx, &device, dev) == TLMP_SUCCESS)
             tlmpRemoveDevice(ctx, device);
-        tlmpFree(device);
     }
     break;
     default:
@@ -109,9 +108,9 @@ tlmpReturn tlmpTerminateContext(tlmpContext** context)
     libusb_hotplug_deregister_callback((*context)->lib,
                                        (*context)->hotplug);
     
-    libusb_exit( (*context)->lib );
-    
     tlmpClearContext(*context);
+
+    libusb_exit( (*context)->lib );
     
     tlmpFree(*context);
     *context = 0;
@@ -296,6 +295,102 @@ tlmpReturn tlmpReceivePacket(tlmpDevice* device, unsigned char id, unsigned char
     tlmpReturn(SUCCESS);
 }
 
+void tlmpPacketSent(struct libusb_transfer* transfer)
+{
+    tlmpDevice* device = (tlmpDevice*)transfer->user_data;
+    tlmpFree(transfer->buffer);
+    libusb_free_transfer(transfer);
+
+    tlmpReceivePacketAsync(device);
+}
+
+void tlmpPacketReceived(struct libusb_transfer* transfer)
+{
+    tlmpDevice* device = (tlmpDevice*)transfer->user_data;
+    unsigned char* buffer = transfer->buffer;
+    libusb_free_transfer(transfer);
+
+    if(device->kernel)
+	libusb_attach_kernel_driver(device->handle, 0);
+
+    unsigned char size = buffer[0];
+    unsigned char id = buffer[1];
+
+    if(device->state == TLMP_STATE_WAITFORSTATUS)
+    {
+	if(id == TLMP_MESSAGE_STATUS && size == 1)
+	{
+	    if(device->callback)
+		((tlmpStatusCallback)device->callback)(device, buffer[2]);
+	    device->state = TLMP_STATE_IDLE;
+	}
+    }
+    
+    tlmpFree(buffer);
+}
+
+tlmpReturn tlmpReceivePacketAsync(tlmpDevice* device)
+{
+    if(device == 0)
+        tlmpReturn(NO_DEVICE);
+
+    unsigned char* buffer = tlmpMallocArray(unsigned char, 64);;
+
+    struct libusb_transfer* transfer = libusb_alloc_transfer(1);
+
+    libusb_fill_interrupt_transfer(transfer,
+				   device->handle,
+				   LIBUSB_ENDPOINT_IN | 1,
+				   buffer, 64,
+				   tlmpPacketReceived,
+				   device,
+				   1000);
+
+    int error = libusb_submit_transfer(transfer);
+
+    if(error)
+	tlmpReturn(IO);
+    
+    tlmpReturn(SUCCESS);
+}
+
+tlmpReturn tlmpSendPacketAsync(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size)
+{
+    if(device == 0)
+        tlmpReturn(NO_DEVICE);
+
+    unsigned char* buffer = tlmpMallocArray(unsigned char, 64);;
+    size = size>62?62:size;
+    buffer[0] = size;
+    buffer[1] = id;
+    if(size && data)
+        memcpy(&buffer[2],data,size);
+    
+    struct libusb_transfer* transfer = libusb_alloc_transfer(1);
+
+    libusb_fill_interrupt_transfer(transfer,
+				   device->handle,
+				   LIBUSB_ENDPOINT_OUT | 2,
+				   buffer, 64,
+				   tlmpPacketSent,
+				   device,
+				   1000);
+
+    device->kernel = 0;
+    if(libusb_kernel_driver_active(device->handle, 0))
+    {
+	device->kernel = 1;
+    	libusb_detach_kernel_driver(device->handle, 0);
+    }
+
+    int error = libusb_submit_transfer(transfer);
+
+    if(error)
+	tlmpReturn(IO);
+    
+    tlmpReturn(SUCCESS);
+}
+
 // hook up an external callback for when a mooltipass has been connected or disconnected
 tlmpReturn tlmpSetConnectCallback(tlmpContext* context, tlmpConnectCallback callback)
 {
@@ -333,9 +428,10 @@ tlmpReturn tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback)
     if(device->state != TLMP_STATE_IDLE)
         tlmpReturn(BUSY);
 
-//    device->state = TLMP_STATE_WAITFORSTATUS;
+    device->callback = callback;
+    device->state = TLMP_STATE_WAITFORSTATUS;
 
-    tlmpReturn(SUCCESS);
+    return tlmpSendPacketAsync(device, TLMP_MESSAGE_STATUS, 0, 0);
     
 }
 

@@ -53,6 +53,11 @@ void deviceConnected(tlmpContext* context, tlmpDevice* device, int connected)
         dev = NULL;
 }
 
+void onRequest(tlmpDevice* context, tlmpStatus status)
+{
+    printf("Hello 0x%X\n", status);
+}
+    
 int main(int argc, char** argv)
 {
     UNUSED(argc);
@@ -84,11 +89,12 @@ int main(int argc, char** argv)
 		printf("Device unlocked\n");
 	    if(stat & TLMP_STATUS_UNKNOWNCARD)
 		printf("Unknown card inserted\n");
+	    tlmpRequestStatus(dev, onRequest);
 	}
     }
     running = 0;
-    tlmpTerminateContext(&ctx);
     pthread_join(threadID, NULL);
+    tlmpTerminateContext(&ctx);
 
     printf("End\n");
 }
