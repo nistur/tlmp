@@ -95,7 +95,9 @@ int main(int argc, char** argv)
 		printf("Device unlocked\n");
 	    if(stat & TLMP_STATUS_UNKNOWNCARD)
 		printf("Unknown card inserted\n");
-	    tlmpRequestAuthentication(dev, "faun", onAuth);
+	    char host[62];
+	    gethostname(host, 62);
+	    tlmpRequestAuthentication(dev, host, onAuth);
 	}
     }
     running = 0;

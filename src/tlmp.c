@@ -296,6 +296,7 @@ tlmpReturn tlmpReceivePacket(tlmpDevice* device, unsigned char id, unsigned char
     tlmpReturn(SUCCESS);
 }
 
+// Callback from libusb when a packet got sent to the mooltipass
 void tlmpPacketSent(struct libusb_transfer* transfer)
 {
     tlmpDevice* device = (tlmpDevice*)transfer->user_data;
@@ -305,6 +306,7 @@ void tlmpPacketSent(struct libusb_transfer* transfer)
     tlmpReceivePacketAsync(device);
 }
 
+// Callback from libusb when a packet got received from the mooltipass
 void tlmpPacketReceived(struct libusb_transfer* transfer)
 {
     tlmpDevice* device = (tlmpDevice*)transfer->user_data;
@@ -317,10 +319,10 @@ void tlmpPacketReceived(struct libusb_transfer* transfer)
     unsigned char size = buffer[0];
     unsigned char id = buffer[1];
 
-    printf("0x%X %d\n", id, size);
-    
+    // Check that we were expecting this packet
     if(device->state == id)
     {
+	// Handle the packet based on the type of packet it is
 	if(id == TLMP_MESSAGE_STATUS &&
 	   size == 1)
 	{
@@ -328,9 +330,11 @@ void tlmpPacketReceived(struct libusb_transfer* transfer)
 		((tlmpStatusCallback)device->callback)(device, buffer[2]);
 	    device->state = TLMP_STATE_IDLE;
 	}
+	// Mooltipass set the current context
 	else if(id == TLMP_MESSAGE_SETCONTEXT &&
 	   size == 1)
 	{
+	    // Mooltipass returns 0x01 on sucessfully found context
 	    if(buffer[2] == 0x01)
 	    {
 		tlmpSendPacketAsync(device, TLMP_MESSAGE_GETLOGIN, 0, 0);
@@ -340,6 +344,7 @@ void tlmpPacketReceived(struct libusb_transfer* transfer)
 		device->state = TLMP_STATE_IDLE;
 	    }
 	}
+	// Mooltipass returned login for the current context
 	else if(id == TLMP_MESSAGE_GETLOGIN &&
 	    size > 1)
 	{
@@ -350,14 +355,21 @@ void tlmpPacketReceived(struct libusb_transfer* transfer)
 	    tlmpSendPacketAsync(device, TLMP_MESSAGE_GETPASSWORD, 0, 0);
 			
 	}
+	// Mooltipass returned a password for the current context
 	else if(id == TLMP_MESSAGE_GETPASSWORD &&
 	    size > 1)
 	{
+	    // The length of the USB packet is 64 bytes. 2 bytes are used for
+	    // the header (size + message ID) leaving 62 bytes. In theory this
+	    // should be null terminated, but just to be totally sure, add an
+	    // extra null on the end
 	    char pass[63];
+	    pass[62] = 0;
 	    memcpy(pass, &buffer[2], size + 1);
 
 	    if(device->callback != 0)
 		((tlmpAuthCallback)device->callback)((const char*)device->user, pass);
+	    memset(pass, 0, 63);// as soon as we've used the password, destroy it
 	    
 	    tlmpFree(device->user);
 
@@ -372,6 +384,7 @@ void tlmpPacketReceived(struct libusb_transfer* transfer)
     tlmpFree(buffer);
 }
 
+// Request libusb to receive a packet from the mooltipass
 tlmpReturn tlmpReceivePacketAsync(tlmpDevice* device)
 {
     if(device == 0)
@@ -397,6 +410,8 @@ tlmpReturn tlmpReceivePacketAsync(tlmpDevice* device)
     tlmpReturn(SUCCESS);
 }
 
+// Request libusb to send a packet to the mooltipass. Will create the correct
+// packet structure based on the information given
 tlmpReturn tlmpSendPacketAsync(tlmpDevice* device, unsigned char id, unsigned char* data, unsigned char size)
 {
     if(device == 0)
