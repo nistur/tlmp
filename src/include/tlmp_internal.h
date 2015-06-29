@@ -31,9 +31,6 @@
 #define USB_PID (0x09A0)
 
 #define TLMP_STATE_IDLE            0x00
-#define TLMP_STATE_WAITFORLOGIN    0x01
-#define TLMP_STATE_WAITFORPASSWORD 0x02
-#define TLMP_STATE_WAITFORSTATUS   0x03
 
 typedef struct _tlmpNode tlmpNode;
 
@@ -65,6 +62,7 @@ struct _tlmpDevice
     int state;
 
     unsigned char kernel;
+    void* user;
 };
 
 /***************************************

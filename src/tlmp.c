@@ -136,7 +136,8 @@ tlmpReturn tlmpAddDevice(tlmpContext* context, tlmpDevice* device)
 {
     if(context == 0)
         tlmpReturn(NO_CONTEXT);
-    
+
+    printf("Adding device\n");
     tlmpNode** tail = &context->devices;
     while(*tail)
         tail = &(*tail)->next;
@@ -316,16 +317,58 @@ void tlmpPacketReceived(struct libusb_transfer* transfer)
     unsigned char size = buffer[0];
     unsigned char id = buffer[1];
 
-    if(device->state == TLMP_STATE_WAITFORSTATUS)
+    printf("0x%X %d\n", id, size);
+    
+    if(device->state == id)
     {
-	if(id == TLMP_MESSAGE_STATUS && size == 1)
+	if(id == TLMP_MESSAGE_STATUS &&
+	   size == 1)
 	{
 	    if(device->callback)
 		((tlmpStatusCallback)device->callback)(device, buffer[2]);
 	    device->state = TLMP_STATE_IDLE;
 	}
+	else if(id == TLMP_MESSAGE_SETCONTEXT &&
+	   size == 1)
+	{
+	    if(buffer[2] == 0x01)
+	    {
+		tlmpSendPacketAsync(device, TLMP_MESSAGE_GETLOGIN, 0, 0);
+	    }
+	    else
+	    {
+		device->state = TLMP_STATE_IDLE;
+	    }
+	}
+	else if(id == TLMP_MESSAGE_GETLOGIN &&
+	    size > 1)
+	{
+	    tlmpFree(device->user);
+	    device->user = tlmpMallocArray(unsigned char, 63);
+	    memcpy(device->user, &buffer[2], size + 1);
+
+	    tlmpSendPacketAsync(device, TLMP_MESSAGE_GETPASSWORD, 0, 0);
+			
+	}
+	else if(id == TLMP_MESSAGE_GETPASSWORD &&
+	    size > 1)
+	{
+	    char pass[63];
+	    memcpy(pass, &buffer[2], size + 1);
+
+	    if(device->callback != 0)
+		((tlmpAuthCallback)device->callback)((const char*)device->user, pass);
+	    
+	    tlmpFree(device->user);
+
+	    device->state = TLMP_STATE_IDLE;
+	}
+	else
+	{
+	    //printf("Error with 0x%X and size %d\n", id, size);
+	    device->state = TLMP_STATE_IDLE;
+	}
     }
-    
     tlmpFree(buffer);
 }
 
@@ -344,7 +387,7 @@ tlmpReturn tlmpReceivePacketAsync(tlmpDevice* device)
 				   buffer, 64,
 				   tlmpPacketReceived,
 				   device,
-				   1000);
+				   10000);
 
     int error = libusb_submit_transfer(transfer);
 
@@ -383,6 +426,7 @@ tlmpReturn tlmpSendPacketAsync(tlmpDevice* device, unsigned char id, unsigned ch
     	libusb_detach_kernel_driver(device->handle, 0);
     }
 
+    device->state = id;
     int error = libusb_submit_transfer(transfer);
 
     if(error)
@@ -398,6 +442,13 @@ tlmpReturn tlmpSetConnectCallback(tlmpContext* context, tlmpConnectCallback call
         tlmpReturn(NO_CONTEXT);
 
     context->connect = callback;
+
+    tlmpNode* dev = context->devices;
+    while(dev)
+    {
+	callback(context, (tlmpDevice*)dev, 1);
+	dev = dev->next;
+    }
     
     tlmpReturn(SUCCESS);
 }
@@ -405,23 +456,23 @@ tlmpReturn tlmpSetConnectCallback(tlmpContext* context, tlmpConnectCallback call
 // TODO: Async credential request
 tlmpReturn tlmpRequestAuthentication(tlmpDevice* device, const char* domain, tlmpAuthCallback callback)
 {
-    tlmpUnused(domain);
-    tlmpUnused(callback);
     if(device == 0)
         tlmpReturn(NO_DEVICE);
     
     if(device->state != TLMP_STATE_IDLE)
         tlmpReturn(BUSY);
 
-    //device->state = TLMP_STATE_WAITFORLOGIN;
-    
-    tlmpReturn(SUCCESS);
+    device->callback = callback;
+
+    unsigned char payload[62];
+    unsigned int size = strlen(domain)+1;
+    memcpy(payload, domain, size);
+    return tlmpSendPacketAsync(device, TLMP_MESSAGE_SETCONTEXT, payload, size);
 }
 
 // TODO: Async status request
 tlmpReturn tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback)
 {
-    tlmpUnused(callback);
     if(device == 0)
         tlmpReturn(NO_DEVICE);
 
@@ -429,10 +480,8 @@ tlmpReturn tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback)
         tlmpReturn(BUSY);
 
     device->callback = callback;
-    device->state = TLMP_STATE_WAITFORSTATUS;
 
-    return tlmpSendPacketAsync(device, TLMP_MESSAGE_STATUS, 0, 0);
-    
+    return tlmpSendPacketAsync(device, TLMP_MESSAGE_STATUS, 0, 0);    
 }
 
 // Find what status the mooltipass is in
@@ -444,7 +493,7 @@ tlmpReturn tlmpGetStatus(tlmpDevice* device, tlmpStatus* status)
     if(device->state != TLMP_STATE_IDLE)
         tlmpReturn(BUSY);
 
-    device->state = TLMP_STATE_WAITFORSTATUS;
+    device->state = TLMP_MESSAGE_STATUS;
 
     tlmpReturn err =  tlmpSendPacket(device,
 				     TLMP_MESSAGE_STATUS,

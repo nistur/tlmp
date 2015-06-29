@@ -105,10 +105,8 @@ TLMP_EXPORT tlmpReturn   tlmpUpdateContext      (tlmpContext* context);
 //  TLMP_NO_CONTEXT - Null context pointer provided
 TLMP_EXPORT tlmpReturn   tlmpSetConnectCallback (tlmpContext* context, tlmpConnectCallback callback);
 
-// TODO: support async requests
-/*
 TLMP_EXPORT tlmpReturn   tlmpRequestAuthentication(tlmpDevice* device, const char* domain, tlmpAuthCallback callback);
-*/
+
 TLMP_EXPORT tlmpReturn   tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback);
 
 

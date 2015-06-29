@@ -47,6 +47,7 @@ void* update(void* user)
 void deviceConnected(tlmpContext* context, tlmpDevice* device, int connected)
 {
     UNUSED(context);
+    printf("got device\n");
     if(connected)
         dev = device;
     else if(dev == device)
@@ -56,6 +57,11 @@ void deviceConnected(tlmpContext* context, tlmpDevice* device, int connected)
 void onRequest(tlmpDevice* context, tlmpStatus status)
 {
     printf("Hello 0x%X\n", status);
+}
+
+void onAuth(const char* login, const char* pass)
+{
+    printf("Got auth %s:%s\n", login, pass);
 }
     
 int main(int argc, char** argv)
@@ -89,7 +95,7 @@ int main(int argc, char** argv)
 		printf("Device unlocked\n");
 	    if(stat & TLMP_STATUS_UNKNOWNCARD)
 		printf("Unknown card inserted\n");
-	    tlmpRequestStatus(dev, onRequest);
+	    tlmpRequestAuthentication(dev, "faun", onAuth);
 	}
     }
     running = 0;
