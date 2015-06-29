@@ -103,10 +103,38 @@ TLMP_EXPORT tlmpReturn   tlmpUpdateContext      (tlmpContext* context);
 // returns:
 //  TLMP_SUCCESS    - Setting the callback function has been successful
 //  TLMP_NO_CONTEXT - Null context pointer provided
+// note:
+//  If successful, callback will be called immediately with all devices
+// currently plugged in
 TLMP_EXPORT tlmpReturn   tlmpSetConnectCallback (tlmpContext* context, tlmpConnectCallback callback);
 
+// tlmpRequestAuthentication
+//  Request a username and password for the provided domain.
+// params:
+//  device   - the device to request the credentials from
+//  domain   - the domain or reference to query the credentials on (context)
+//  callback - the function to call with the retrieved credentials
+// returns:
+//  TLMP_SUCCESS   - Request successfully sent
+//  TLMP_NO_DEVICE - Null or invalid device provided
+//  TLMP_BUSY      - Device is currently processing another request
+//  TLMP_IO        - IO error while communicating with device
+// note:
+//  If the mooltipass doesn't return a valid credential pair, either if the
+// user doesn't allow access, or if the mooltipass doesn't have a credential pair
+// for the provided domain, the callback will _not_ be called.
 TLMP_EXPORT tlmpReturn   tlmpRequestAuthentication(tlmpDevice* device, const char* domain, tlmpAuthCallback callback);
 
+// tlmpRequestStatus
+//  Request the status of the mooltipass device
+// params:
+//  device   - the device to request the status of
+//  callback - the function to call with the retrieved status
+// returns:
+//  TLMP_SUCCESS   - Request successfully sent
+//  TLMP_NO_DEVICE - Null or invalid device provided
+//  TLMP_BUSY      - Device is currently processing another request
+//  TLMP_IO        - IO error while communicating with device
 TLMP_EXPORT tlmpReturn   tlmpRequestStatus(tlmpDevice* device, tlmpStatusCallback callback);
 
 
