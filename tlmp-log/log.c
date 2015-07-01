@@ -21,19 +21,42 @@
 #include "stdio.h"
 #include "tlmp_internal.h"
 #include "libusb.h"
+#ifndef WIN32
 #include "pthread.h"
 #include "unistd.h"
+#else
+#include <windows.h>
+#endif
 
 int running = 0;
 tlmpContext* ctx;
 tlmpDevice* dev;
 
-void _unused(void* x){ x += 0; }
+void _unused(void* x){ (char*)x += 0; }
 #define UNUSED(x) _unused((void*)&x)
 
 #define REFRESH (1000000 / 60)
 
+#ifdef WIN32
+void usleep(__int64 usec)
+{
+	HANDLE timer; 
+	LARGE_INTEGER ft; 
+
+	ft.QuadPart = -(10*usec); // Convert to 100 nanosecond interval, negative value indicates relative time
+
+	timer = CreateWaitableTimer(NULL, TRUE, NULL); 
+	SetWaitableTimer(timer, &ft, 0, NULL, NULL, 0); 
+	WaitForSingleObject(timer, INFINITE); 
+	CloseHandle(timer); 
+}
+#endif
+
+#ifndef WIN32
 void* update(void* user)
+#else
+DWORD WINAPI update(LPVOID user)
+#endif
 {
     UNUSED(user);
     while( running )
@@ -66,42 +89,57 @@ void onAuth(const char* login, const char* pass)
     
 int main(int argc, char** argv)
 {
-    UNUSED(argc);
-    UNUSED(argv);
-    printf("Start\n");
-    int c;
+	int c;
+#ifndef WIN32
     pthread_t threadID;
+#else
+	DWORD threadID;
+	HANDLE threadHandle;
+#endif
+	UNUSED(argc);
+	UNUSED(argv);
+	printf("Start\n");
     tlmpInitContext(&ctx);
 
     tlmpSetConnectCallback(ctx, deviceConnected);
 
     running = 1;
     
+#ifndef WIN32
     pthread_create(&threadID, NULL, update, NULL);
+#else
+	threadHandle = CreateThread(NULL, 0, update, NULL, 0, &threadID);
+#endif
     while(1)
     {
-	scanf("%d", &c);
+	scanf_s("%d", &c);
 	if(c==0)
 	    break;
         else if(dev)
-	{
-	    tlmpStatus stat = 0;
-	    tlmpGetStatus(dev, &stat);
-	    if(stat & TLMP_STATUS_SMARTCARD)
-		printf("Smartcard inserted\n");
-	    if(stat & TLMP_STATUS_PINSCREEN)
-		printf("On unlock screen\n");
-	    if(stat & TLMP_STATUS_UNLOCKED)
-		printf("Device unlocked\n");
-	    if(stat & TLMP_STATUS_UNKNOWNCARD)
-		printf("Unknown card inserted\n");
-	    char host[62];
-	    gethostname(host, 62);
-	    tlmpRequestAuthentication(dev, host, onAuth);
+		{
+			char host[62];
+			tlmpStatus stat = 0;
+			tlmpGetStatus(dev, &stat);
+			if(stat & TLMP_STATUS_SMARTCARD)
+				printf("Smartcard inserted\n");
+			if(stat & TLMP_STATUS_PINSCREEN)
+				printf("On unlock screen\n");
+			if(stat & TLMP_STATUS_UNLOCKED)
+				printf("Device unlocked\n");
+			if(stat & TLMP_STATUS_UNKNOWNCARD)
+				printf("Unknown card inserted\n");
+			//gethostname(host, 62);
+			sprintf( host, "faun" );
+			tlmpRequestAuthentication(dev, host, onAuth);
 	}
     }
     running = 0;
+#ifndef WIN32
     pthread_join(threadID, NULL);
+#else
+	WaitForSingleObject(threadHandle, INFINITE);
+	CloseHandle(threadHandle);
+#endif
     tlmpTerminateContext(&ctx);
 
     printf("End\n");

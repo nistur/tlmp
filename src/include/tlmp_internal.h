@@ -80,7 +80,7 @@ void  tlmpFreeInternal(void** p);
  ***************************************/
 extern tlmpReturn  g_tlmpError;
 extern const char* g_tlmpErrors[];
-#define tlmpReturn(x)				\
+#define tlmpReturnCode(x)				\
     {						\
 	g_tlmpError = TLMP_##x;			\
 	return TLMP_##x;			\

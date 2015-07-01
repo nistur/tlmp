@@ -25,8 +25,14 @@ solution "tlmp"
     files { "include/**.h" }
 
     defines { "TLMP_BUILD" }
-    buildoptions { "`pkg-config --cflags libusb-1.0`" }
-    linkoptions { "`pkg-config --libs libusb-1.0`" }
+
+	if os.is("windows") then
+		includedirs { "extern/libusb-1.0/include" }
+		libdirs { "extern/libusb-1.0/lib/x64" }
+	else
+		buildoptions { "`pkg-config --cflags libusb-1.0`" }
+		linkoptions { "`pkg-config --libs libusb-1.0`" }
+	end
 
     configuration "Debug"
         defines { "DEBUG" }
@@ -55,7 +61,12 @@ solution "tlmp"
     project "tlmp-log"
         kind "ConsoleApp"
         files { "tlmp-log/**.c" }
-        links { "tlmp", "pthread" }
+        links { "tlmp" }
+		if os.is("windows") then
+			links { "libusb-1.0" }
+		else
+			links { "pthread" }
+		end
 
     project "tests"
         kind "ConsoleApp"
